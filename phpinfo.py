@@ -5,13 +5,14 @@ import sys
 from bs4 import BeautifulSoup, element
 from tabulate import tabulate
 import wcwidth
+import pprint
 
 #将重要信息取出，转化为dict
 def info_to_dict(html):
     phpinfo_dict = {}
-    #基本信息，固定为第二个table
+    #基本信息
     phpinfo_dict["Baseinfo"] = {}
-    base_info_table = html.select("body > div.center > table:nth-child(2)")[0]
+    base_info_table = html.select("body > div > table:nth-child(2)")[0] if len(html.select("body > div > table:nth-child(2)")) != 0 else html.select("body > div > table:nth-child(3)")[0]
     for tr in base_info_table.find_all("tr"):
         key   = tr.select("td.e")[0].string.strip()
         value = tr.select("td.v")[0].string.strip()
@@ -24,7 +25,7 @@ def info_to_dict(html):
         #有一个特殊情况PHP Credits，它在h1标签中，其内容是php及其sapi、module等的作者，对脚本功能没有意义，所以不解析
         for sibling in h2.next_siblings:
             #使用next_siblings会匹配到许多\n \t等，需特殊处理，官方文档明确提到
-            if sibling.name != "table" and type(sibling) != element.NavigableString:
+            if sibling.name != "table" and type(sibling) != element.NavigableString and sibling.name != "br":
                 break
             if sibling.name == "table":
                 for tr in sibling.find_all("tr"):
@@ -179,17 +180,23 @@ def bypass_disable_function(disable_func, phpinfo_dict):
     disable_func = disable_func.split(",")
     suggestion = ""
     bypass_func = []
+
     if "dl" not in disable_func and phpinfo_dict["Core"]["enable_dl"] == "On":
         bypass_func.append("dl")
     if "pcntl_exec" not in disable_func and "--enable-pcntl" in phpinfo_dict["Baseinfo"]["Configure Command"]:
         bypass_func.append("pcntl_exec")
+    common_funcs = ['exec', 'system', 'passthru', 'popen', 'proc_open', 'shell_exec']
+    for func in common_funcs:
+        if func not in disable_func:
+            bypass_func.append(func)
+    suggestion += "可用函数：" + ", ".join(bypass_func) + "\n"
+
     if "Linux" in phpinfo_dict["Baseinfo"]["System"] and "putenv" not in disable_func and "mail" not in disable_func:
         suggestion += "使用LD_PRELOAD https://github.com/yangyangwithgnu/bypass_disablefunc_via_LD_PRELOAD\n"
     if "imap" in phpinfo_dict:
         suggestion += "使用imap https://github.com/vulhub/vulhub/blob/master/php/CVE-2018-19518/README.md\n"
     if "imagemagick" in phpinfo_dict:
         suggestion += "使用 ImageMagick\n"
-    common_funcs = ['exec', 'system', 'passthru', 'popen', 'proc_open', 'shell_exec']
     suggestion += "disable function bypass合集 https://github.com/l3m0n/Bypass_Disable_functions_Shell"
     return suggestion
 
